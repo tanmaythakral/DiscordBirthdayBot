@@ -1,19 +1,53 @@
+import os
 import discord
+from datetime import datetime
+from apscheduler.schedulers.background import BackgroundScheduler
+import threading
+import time
+from pytz import timezone, utc
+from discord.ext import commands
 import sqlite3
 from sqlite3 import Error
 
-TOKEN = 'ODU5ODM2ODUxMDk0NDIxNTQ1.YNyfeA.tXwSr7j25YVUgh0jNQdu-hAUFMY'
+
+TOKEN = os.environ['TOKEN']
 GUILD = 'Bot Testing Server'
 
-sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS tasks (
+months = {
+	"jan" : 1,
+	'feb' : 2,
+	'mar' : 3,
+	'apr' : 4,
+	'may' : 5,
+	'jun' : 6,
+	'jul' : 7,
+	'aug' : 8,
+	'sep' : 9,
+	'oct' : 10,
+	'nov' : 11,
+	'dec' : 12
+}
+
+
+def get_pst_time():
+    date_format='%m_%d_%Y_%H_%M_%S_%Z'
+    date = datetime.now(tz=utc)
+    pstDateTime = date.astimezone(timezone('US/Pacific'))
+    return pstDateTime
+
+result = get_pst_time()
+# result = time.strftime("%H,%M,%S" , result)
+
+print(result.strftime(""))
+
+
+
+
+sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS date (
                                     id integer PRIMARY KEY,
                                     name text NOT NULL,
-                                    priority integer,
-                                    status_id integer NOT NULL,
-                                    project_id integer NOT NULL,
-                                    begin_date text NOT NULL,
-                                    end_date text NOT NULL,
-                                    FOREIGN KEY (project_id) REFERENCES projects (id)
+                                    member_id integer NOT NULL,
+                                    date text NOT NULL
                                 );"""
 
 def create_connection():
@@ -38,18 +72,85 @@ def create_table(conn, create_table_sql):
     except Error as e:
         print(e)
 
+def create_date(conn, date):
+    """
+    Create a new date
+    :param conn:
+    :param task:
+    :return:
+    """
+
+    sql = ''' INSERT INTO date(name,member_id,date)
+              VALUES(?,?,?) '''
+    cur = conn.cursor()
+    cur.execute(sql, date)
+    conn.commit()
+    return cur.lastrowid
 
 client = discord.Client()
+
+# @client.event
+# async def sendmess():
+# 	channel = client.get_channel(859836665811697676)
+# 	await channel.send('hello')
+
+def select_all_date(conn):
+    """
+    Query all rows in the tasks table
+    :param conn: the Connection object
+    :return:
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM date")
+
+    rows = cur.fetchall()
+
+    for row in rows:
+        print(row)
+
+
+
+def delete_all_date(conn):
+    """
+    Delete all rows in the tasks table
+    :param conn: Connection to the SQLite database
+    :return:
+    """
+    sql = 'DELETE FROM date'
+    cur = conn.cursor()
+    cur.execute(sql)
+    conn.commit()
+
+def update_date(conn, task):
+    """
+    update priority, begin_date, and end date of a task
+    :param conn:
+    :param task:
+    :return: project id
+    """
+    sql = ''' UPDATE date
+              SET date = ? 
+              WHERE member_id = ?'''
+    cur = conn.cursor()
+    cur.execute(sql, task)
+    conn.commit()
+
+print('\n')
 conn = create_connection()
+# delete_all_date(conn)
 
-    # create tables
-if conn is not None:
-  # create projects table
-  print("Im here")
-  create_table(conn, sql_create_tasks_table)
+def get_ids():
+	cur = conn.cursor()
+	cur.execute("SELECT member_id FROM date")
+	rows = cur.fetchall()
 
+	ids = []
 
+	for row in rows:
+		for one in row:
+			ids.append(one)
 
+	return ids
 
 
 @client.event
@@ -58,20 +159,47 @@ async def on_ready():
     if guild.name == GUILD:
       break
 
-  print(
-      f'{client.user} is connected to the following guild:\n'
-      f'{guild.name}(id: {guild.id})'
-    )
-  members = '\n - '.join([member.name for member in guild.members])
-  print(f'Guild Members:\n - {members}')
-  print('Pow Pow! We on!')
-
-@client.event
-async def on_message(message):
-  if message.author == client.user:
-    return
-  
-  if message.content.startswith('-hola'):
-    await message.channel.send('hello!')
-
 client.run(TOKEN)
+
+# sendmess()
+bot = commands.Bot(command_prefix='!bb-')
+
+@bot.command(name='hello' , help = 'I need some too!')
+async def setBirthday(ctx , month: str , date: int) :
+	month = month.lower()
+	await ctx.send('hello!')
+	await ctx.send(ctx.author.id)
+	create_table(conn,sql_create_tasks_table)
+	author = str(ctx.author)
+	id  = ctx.author.id
+	date_now = datetime.now()
+	try:
+		x = str(datetime(int(date_now.strftime('%Y')),months[month],int(date)))
+	except ValueError:
+		await ctx.send('Error in parsing date. Check the entered values.')
+		return
+	print(x)
+	if id in get_ids() :
+		update_date(conn , (x , id))
+		await ctx.send('Ok ' + author + '! entry updated.')
+	else:
+		newdate = (author,id,x)
+		create_date(conn,newdate)
+		await ctx.send('Ok ' + author + '! entry added.')
+	select_all_date(conn)
+
+
+# async def notifyBirthday():
+# 	channel = bot.get_channel(859836665811697676)
+# 	await channel.send('hello')
+
+# def notify():
+# 	print('hello')
+# 	notifyBirthday()
+	
+# scheduler = BackgroundScheduler()
+# scheduler.add_job(notify, 'cron', second=1)
+# scheduler.start()
+
+
+bot.run(TOKEN)
