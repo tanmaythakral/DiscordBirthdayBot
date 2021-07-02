@@ -9,39 +9,36 @@ from discord.ext import commands
 import sqlite3
 from sqlite3 import Error
 
-
 TOKEN = os.environ['TOKEN']
 GUILD = 'Bot Testing Server'
 
 months = {
-	"jan" : 1,
-	'feb' : 2,
-	'mar' : 3,
-	'apr' : 4,
-	'may' : 5,
-	'jun' : 6,
-	'jul' : 7,
-	'aug' : 8,
-	'sep' : 9,
-	'oct' : 10,
-	'nov' : 11,
-	'dec' : 12
+    "jan": 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12
 }
 
 
 def get_pst_time():
-    date_format='%m_%d_%Y_%H_%M_%S_%Z'
+    date_format = '%m_%d_%Y_%H_%M_%S_%Z'
     date = datetime.now(tz=utc)
     pstDateTime = date.astimezone(timezone('US/Pacific'))
     return pstDateTime
+
 
 result = get_pst_time()
 # result = time.strftime("%H,%M,%S" , result)
 
 print(result.strftime(""))
-
-
-
 
 sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS date (
                                     id integer PRIMARY KEY,
@@ -49,6 +46,7 @@ sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS date (
                                     member_id integer NOT NULL,
                                     date text NOT NULL
                                 );"""
+
 
 def create_connection():
     """ create a database connection to a SQLite database """
@@ -59,6 +57,7 @@ def create_connection():
         return conn
     except Error as e:
         print(e)
+
 
 def create_table(conn, create_table_sql):
     """ create a table from the create_table_sql statement
@@ -71,6 +70,7 @@ def create_table(conn, create_table_sql):
         c.execute(create_table_sql)
     except Error as e:
         print(e)
+
 
 def create_date(conn, date):
     """
@@ -87,7 +87,9 @@ def create_date(conn, date):
     conn.commit()
     return cur.lastrowid
 
-client = discord.Client()
+
+# client = discord.Client()
+
 
 # @client.event
 # async def sendmess():
@@ -107,7 +109,7 @@ def select_all_date(conn):
 
     for row in rows:
         print(row)
-
+    return rows
 
 
 def delete_all_date(conn):
@@ -120,6 +122,7 @@ def delete_all_date(conn):
     cur = conn.cursor()
     cur.execute(sql)
     conn.commit()
+
 
 def update_date(conn, task):
     """
@@ -135,59 +138,81 @@ def update_date(conn, task):
     cur.execute(sql, task)
     conn.commit()
 
+
 print('\n')
 conn = create_connection()
+
+
 # delete_all_date(conn)
 
 def get_ids():
-	cur = conn.cursor()
-	cur.execute("SELECT member_id FROM date")
-	rows = cur.fetchall()
+    cur = conn.cursor()
+    cur.execute("SELECT member_id FROM date")
+    rows = cur.fetchall()
 
-	ids = []
+    ids = []
 
-	for row in rows:
-		for one in row:
-			ids.append(one)
+    for row in rows:
+        for one in row:
+            ids.append(one)
 
-	return ids
+    return ids
+
+def getupcoming():
+	entries = select_all_date(conn)
+	i = 0
+	upcoming = []
+	for entry in entries:
+		date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
+		day = date_time_obj.strftime('%d')
+		month = date_time_obj.strftime('%m')
+		if (month == datetime.now().strftime('%m')):
+			if (day < datetime.now().strftime('%d')):
+				x = [day,month,entry[2]]
+				upcoming.append(x)
+	return upcoming
 
 
-@client.event
-async def on_ready():
-  for guild in client.guilds:
-    if guild.name == GUILD:
-      break
+# @client.event
+# async def on_ready():
+#     for guild in client.guilds:
+#         if guild.name == GUILD:
+#             break
 
-client.run(TOKEN)
 
-# sendmess()
+# client.run(TOKEN)
+
+# # sendmess()
 bot = commands.Bot(command_prefix='!bb-')
 
-@bot.command(name='hello' , help = 'I need some too!')
-async def setBirthday(ctx , month: str , date: int) :
-	month = month.lower()
-	await ctx.send('hello!')
-	await ctx.send(ctx.author.id)
-	create_table(conn,sql_create_tasks_table)
-	author = str(ctx.author)
-	id  = ctx.author.id
-	date_now = datetime.now()
-	try:
-		x = str(datetime(int(date_now.strftime('%Y')),months[month],int(date)))
-	except ValueError:
-		await ctx.send('Error in parsing date. Check the entered values.')
-		return
-	print(x)
-	if id in get_ids() :
-		update_date(conn , (x , id))
-		await ctx.send('Ok ' + author + '! entry updated.')
-	else:
-		newdate = (author,id,x)
-		create_date(conn,newdate)
-		await ctx.send('Ok ' + author + '! entry added.')
-	select_all_date(conn)
 
+@bot.command(name='set', help='set your birthday')
+async def setBirthdaycommand(ctx, month: str, date: int):
+    month = month.lower()
+    await ctx.send('hello!')
+    await ctx.send(ctx.author.id)
+    create_table(conn, sql_create_tasks_table)
+    author = str(ctx.author)
+    id = ctx.author.id
+    date_now = datetime.now()
+    try:
+        x = str(datetime(int(date_now.strftime('%Y')), months[month], int(date)))
+    except ValueError:
+        await ctx.send('Error in parsing date. Check the entered values.')
+        return
+    print(x)
+    if id in get_ids():
+        update_date(conn, (x, id))
+        await ctx.send('Ok ' + author + '! entry updated.')
+    else:
+        newdate = (author, id, x)
+        create_date(conn, newdate)
+        await ctx.send('Ok ' + author + '! entry added.')
+    select_all_date(conn)
+
+@bot.command(name = 'upcoming' , help = "get upcoming birthdays")
+async def getupcomingcommand(ctx):
+	ctx.send(getupcoming)
 
 # async def notifyBirthday():
 # 	channel = bot.get_channel(859836665811697676)
@@ -196,7 +221,7 @@ async def setBirthday(ctx , month: str , date: int) :
 # def notify():
 # 	print('hello')
 # 	notifyBirthday()
-	
+
 # scheduler = BackgroundScheduler()
 # scheduler.add_job(notify, 'cron', second=1)
 # scheduler.start()
