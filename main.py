@@ -1,14 +1,19 @@
 import os
 import discord
 from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
 import threading
+import schedule
 import time
+import asyncio
 from pytz import timezone, utc
-from discord.ext import commands
+from discord.ext import tasks, commands
 import sqlite3
 from sqlite3 import Error
+from dhooks import Webhook
 
+conn = None
+hook = Webhook(
+    "https://discord.com/api/webhooks/905344366502105088/19IIPjnyk3HT_xOTc8VHGvQV5SB7wfRVAgVmR-XjF-2w7baVNx3CiD9p08g0TAAAKAVX")
 TOKEN = os.environ['TOKEN']
 GUILD = 'Bot Testing Server'
 
@@ -36,6 +41,7 @@ def get_pst_time():
 
 
 result = get_pst_time()
+print(result)
 # result = time.strftime("%H,%M,%S" , result)
 
 print(result.strftime(""))
@@ -50,7 +56,6 @@ sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS date (
 
 def create_connection():
     """ create a database connection to a SQLite database """
-    conn = None
     try:
         conn = sqlite3.connect(r"database.db")
         print(sqlite3.version)
@@ -82,19 +87,12 @@ def create_date(conn, date):
 
     sql = ''' INSERT INTO date(name,member_id,date)
               VALUES(?,?,?) '''
+
     cur = conn.cursor()
     cur.execute(sql, date)
     conn.commit()
     return cur.lastrowid
 
-
-# client = discord.Client()
-
-
-# @client.event
-# async def sendmess():
-# 	channel = client.get_channel(859836665811697676)
-# 	await channel.send('hello')
 
 def select_all_date(conn):
     """
@@ -138,9 +136,8 @@ def update_date(conn, task):
     cur.execute(sql, task)
     conn.commit()
 
-
-print('\n')
 conn = create_connection()
+print('\n')
 
 
 # delete_all_date(conn)
@@ -158,36 +155,29 @@ def get_ids():
 
     return ids
 
+
 def getupcoming():
-	entries = select_all_date(conn)
-	i = 0
-	upcoming = []
-	for entry in entries:
-		date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
-		day = date_time_obj.strftime('%d')
-		month = date_time_obj.strftime('%m')
-		if (month == datetime.now().strftime('%m')):
-			if (day < datetime.now().strftime('%d')):
-				x = [day,month,entry[2]]
-				upcoming.append(x)
-	return upcoming
+    entries = select_all_date(conn)
+    i = 0
+    upcoming = []
+    for entry in entries:
+        date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
+        day = result.strftime('%d')
+        month = result.strftime('%m')
+        if (month == date_time_obj.strftime('%m')):
+            if (day <= date_time_obj.strftime('%d')):
+                x = [day, month, entry[1]]
+                upcoming.append(x)
+    return upcoming
 
 
-# @client.event
-# async def on_ready():
-#     for guild in client.guilds:
-#         if guild.name == GUILD:
-#             break
-
-
-# client.run(TOKEN)
-
-# # sendmess()
 bot = commands.Bot(command_prefix='!bb-')
 
 
 @bot.command(name='set', help='set your birthday')
 async def setBirthdaycommand(ctx, month: str, date: int):
+    
+
     month = month.lower()
     await ctx.send('hello!')
     await ctx.send(ctx.author.id)
@@ -210,21 +200,54 @@ async def setBirthdaycommand(ctx, month: str, date: int):
         await ctx.send('Ok ' + author + '! entry added.')
     select_all_date(conn)
 
-@bot.command(name = 'upcoming' , help = "get upcoming birthdays")
+
+@bot.command(name='upcoming', help="get upcoming birthdays")
 async def getupcomingcommand(ctx):
-	ctx.send(getupcoming)
-
-# async def notifyBirthday():
-# 	channel = bot.get_channel(859836665811697676)
-# 	await channel.send('hello')
-
-# def notify():
-# 	print('hello')
-# 	notifyBirthday()
-
-# scheduler = BackgroundScheduler()
-# scheduler.add_job(notify, 'cron', second=1)
-# scheduler.start()
+    upcoming = (getupcoming())
+    print(upcoming)
+    channel = bot.get_channel(id=905310969205514283)
+    await channel.send("hello")
+    await ctx.send(upcoming)
 
 
+def checkAllBds():
+    conn = create_connection()
+    entries = select_all_date(conn)
+    for entry in entries:
+        date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
+        day = result.strftime('%d')
+        month = result.strftime('%m')
+        if (month == date_time_obj.strftime('%m')):
+            if (day == date_time_obj.strftime('%d')):
+                hook.send("Happy Birthday <@{}>".format(entry[2]))
+    conn.close()
+
+
+def background(f):
+    '''
+    a threading decorator
+    use @background above the function you want to run in the background
+    '''
+
+    def backgrnd_func(*a, **kw):
+        threading.Thread(target=f, args=a, kwargs=kw).start()
+
+    return backgrnd_func
+
+
+@background
+def doStuff():
+    schedule.every(10).seconds.do(checkAllBds)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(.001)
+
+
+doStuff()
+# hook.send("hello <@531484670114791435>")
 bot.run(TOKEN)
+
+
+
+
