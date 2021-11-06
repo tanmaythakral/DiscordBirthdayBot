@@ -1,21 +1,19 @@
 import os
-import discord
 from datetime import datetime
 import threading
 import schedule
 import time
-import asyncio
 from pytz import timezone, utc
-from discord.ext import tasks, commands
+from discord.ext import commands
 import sqlite3
 from sqlite3 import Error
-from dhooks import Webhook
+from discord import Game
+from discord import Embed
+import calendar
+
+
 
 conn = None
-hook = Webhook(
-    "https://discord.com/api/webhooks/905344366502105088/19IIPjnyk3HT_xOTc8VHGvQV5SB7wfRVAgVmR-XjF-2w7baVNx3CiD9p08g0TAAAKAVX")
-TOKEN = os.environ['TOKEN']
-GUILD = 'Bot Testing Server'
 
 months = {
     "jan": 1,
@@ -33,8 +31,8 @@ months = {
 }
 
 
+
 def get_pst_time():
-    date_format = '%m_%d_%Y_%H_%M_%S_%Z'
     date = datetime.now(tz=utc)
     pstDateTime = date.astimezone(timezone('US/Pacific'))
     return pstDateTime
@@ -42,34 +40,28 @@ def get_pst_time():
 
 result = get_pst_time()
 print(result)
-# result = time.strftime("%H,%M,%S" , result)
 
 print(result.strftime(""))
 
-sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS date (
+sql_create_tasks_table = """CREATE TABLE IF NOT EXISTS dates (
                                     id integer PRIMARY KEY,
                                     name text NOT NULL,
                                     member_id integer NOT NULL,
-                                    date text NOT NULL
+                                    date text NOT NULL,
+                                    wished text NOT NULL
                                 );"""
 
 
 def create_connection():
-    """ create a database connection to a SQLite database """
     try:
-        conn = sqlite3.connect(r"database.db")
+        c = sqlite3.connect(r"database.db")
         print(sqlite3.version)
-        return conn
+        return c
     except Error as e:
         print(e)
 
 
 def create_table(conn, create_table_sql):
-    """ create a table from the create_table_sql statement
-    :param conn: Connection object
-    :param create_table_sql: a CREATE TABLE statement
-    :return:
-    """
     try:
         c = conn.cursor()
         c.execute(create_table_sql)
@@ -78,15 +70,18 @@ def create_table(conn, create_table_sql):
 
 
 def create_date(conn, date):
-    """
-    Create a new date
-    :param conn:
-    :param task:
-    :return:
-    """
+    sql = ''' INSERT INTO dates(name,member_id,date,wished)
+              VALUES(?,?,?,?) '''
 
-    sql = ''' INSERT INTO date(name,member_id,date)
-              VALUES(?,?,?) '''
+    cur = conn.cursor()
+    cur.execute(sql, date)
+    conn.commit()
+    return cur.lastrowid
+
+
+def create_data(conn, date):
+    sql = ''' INSERT INTO dates(name,member_id,date,wished)
+              VALUES(?,?,?,?) '''
 
     cur = conn.cursor()
     cur.execute(sql, date)
@@ -95,56 +90,53 @@ def create_date(conn, date):
 
 
 def select_all_date(conn):
-    """
-    Query all rows in the tasks table
-    :param conn: the Connection object
-    :return:
-    """
     cur = conn.cursor()
-    cur.execute("SELECT * FROM date")
+    cur.execute("SELECT * FROM dates ORDER BY date(date) ASC")
 
     rows = cur.fetchall()
 
-    for row in rows:
-        print(row)
+    # for row in rows:
+    #     print(row)
     return rows
 
 
 def delete_all_date(conn):
-    """
-    Delete all rows in the tasks table
-    :param conn: Connection to the SQLite database
-    :return:
-    """
-    sql = 'DELETE FROM date'
+    sql = 'DELETE FROM dates'
     cur = conn.cursor()
     cur.execute(sql)
     conn.commit()
 
 
 def update_date(conn, task):
-    """
-    update priority, begin_date, and end date of a task
-    :param conn:
-    :param task:
-    :return: project id
-    """
-    sql = ''' UPDATE date
+    sql = ''' UPDATE dates
               SET date = ? 
               WHERE member_id = ?'''
     cur = conn.cursor()
     cur.execute(sql, task)
     conn.commit()
 
-conn = create_connection()
+def delete_date(conn, task):
+    sql = ''' DELETE FROM dates
+              WHERE member_id = ?'''
+    cur = conn.cursor()
+    cur.execute(sql, task)
+    conn.commit()
+
+def update_wished(conn, task):
+    sql = ''' UPDATE dates
+              SET wished = ? 
+              WHERE member_id = ?'''
+    cur = conn.cursor()
+    cur.execute(sql, task)
+    conn.commit()
+
 print('\n')
 
 
-# delete_all_date(conn)
-
 def get_ids():
+    conn = create_connection()
     cur = conn.cursor()
-    cur.execute("SELECT member_id FROM date")
+    cur.execute("SELECT member_id FROM dates ORDER BY date(date) ASC")
     rows = cur.fetchall()
 
     ids = []
@@ -157,30 +149,33 @@ def get_ids():
 
 
 def getupcoming():
+    conn = create_connection()
+    result = get_pst_time()
     entries = select_all_date(conn)
+    print(entries)
     i = 0
     upcoming = []
     for entry in entries:
+        if (i == 15):
+            return upcoming
         date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
         day = result.strftime('%d')
         month = result.strftime('%m')
         if (month == date_time_obj.strftime('%m')):
             if (day <= date_time_obj.strftime('%d')):
-                x = [day, month, entry[1]]
+                x = [date_time_obj.strftime('%d'), month, entry[1]]
                 upcoming.append(x)
+                i=+1
     return upcoming
 
 
-bot = commands.Bot(command_prefix='!bb-')
+bot = commands.Bot(command_prefix='bb.')
 
 
 @bot.command(name='set', help='set your birthday')
 async def setBirthdaycommand(ctx, month: str, date: int):
-    
-
+    conn = create_connection()
     month = month.lower()
-    await ctx.send('hello!')
-    await ctx.send(ctx.author.id)
     create_table(conn, sql_create_tasks_table)
     author = str(ctx.author)
     id = ctx.author.id
@@ -190,37 +185,80 @@ async def setBirthdaycommand(ctx, month: str, date: int):
     except ValueError:
         await ctx.send('Error in parsing date. Check the entered values.')
         return
-    print(x)
     if id in get_ids():
         update_date(conn, (x, id))
-        await ctx.send('Ok ' + author + '! entry updated.')
+        await ctx.send('Ok <@' + str(id) + '>! entry updated.')
     else:
-        newdate = (author, id, x)
+        newdate = (author, id, x,"false")
         create_date(conn, newdate)
-        await ctx.send('Ok ' + author + '! entry added.')
+        await ctx.send('Ok <@' + str(id) + '>! entry added.')
     select_all_date(conn)
 
 
+@bot.command(name="when" , help="get birthday of a user")
+async def getBirthday(ctx,id: str):
+    id = id[3:][:-1]
+    conn = create_connection()
+    entries = select_all_date(conn)
+    for entry in entries:
+        print(type(entry[2]))
+        print(entry)
+        date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
+        day = date_time_obj.strftime('%d')
+        month = date_time_obj.strftime('%b')
+        if str(entry[2])==id:
+            desc = "`" + entry[1] + "`: " + month + "-" + day
+            await ctx.send(embed=Embed(description=desc))
+            conn.close()
+            return
+
+@bot.command(name="delete" , help="delete a birthday of a user")
+async def deleteBirthday(ctx):
+    conn = create_connection()
+    entries = select_all_date(conn)
+    print(type(ctx.author.id))
+    for entry in entries:
+        if entry[2]==ctx.author.id:
+            delete_date(conn ,(ctx.author.id,))
+            await ctx.send("Deleted!")
+
 @bot.command(name='upcoming', help="get upcoming birthdays")
 async def getupcomingcommand(ctx):
+    str1 = ""
     upcoming = (getupcoming())
-    print(upcoming)
-    channel = bot.get_channel(id=905310969205514283)
-    await channel.send("hello")
-    await ctx.send(upcoming)
+    for i in upcoming:
+        x = "● `{}-{}`:  {}\n".format(calendar.month_abbr[int(i[1])], i[0], i[2])
+        str1 += x
+    await ctx.send("Upcoming birthdays:", embed=Embed(description=str1))
 
 
 def checkAllBds():
+    result = get_pst_time()
     conn = create_connection()
     entries = select_all_date(conn)
     for entry in entries:
         date_time_obj = datetime.strptime(entry[3], '%Y-%m-%d %H:%M:%S')
         day = result.strftime('%d')
         month = result.strftime('%m')
-        if (month == date_time_obj.strftime('%m')):
-            if (day == date_time_obj.strftime('%d')):
-                hook.send("Happy Birthday <@{}>".format(entry[2]))
+        if (entry[4] == "false"):
+            if (month == date_time_obj.strftime('%m')):
+                if (day == date_time_obj.strftime('%d')):
+                    print("in")
+                    channel = bot.get_channel("")
+                    bot.loop.create_task(channel.send(embed=Embed(description="Happy birthday <@{}>! :cake:".format(entry[2]), color=0xdd4444)))
+                    update_wished(conn, ("true", entry[2]))
     conn.close()
+
+def settonotwished():
+    result = get_pst_time()
+    day = result.strftime('%d')
+    month = result.strftime('%m')
+    if (day == 1 and month == 1):
+        conn = create_connection()
+        entries = select_all_date(conn)
+        for entry in entries:
+            update_wished(conn, ("false", entry[2]))
+        conn.close()
 
 
 def background(f):
@@ -236,18 +274,17 @@ def background(f):
 
 
 @background
-def doStuff():
-    schedule.every(10).seconds.do(checkAllBds)
+def checkForBirthday():
+    schedule.every().hour.do(checkAllBds)
+    schedule.every().day.at("00:00").do(settonotwished)
 
     while True:
         schedule.run_pending()
-        time.sleep(.001)
+        time.sleep(1)
 
+@bot.event
+async def on_ready():
+    await bot.change_presence(activity=Game(name="bb.help"))
 
-doStuff()
-# hook.send("hello <@531484670114791435>")
+checkForBirthday()
 bot.run(TOKEN)
-
-
-
-
